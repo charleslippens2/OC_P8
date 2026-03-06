@@ -1,0 +1,79 @@
+# Version 2 du format YAML DBT (standard actuel)
+version: 2
+
+# Documentation et tests des modèles intermédiaires (agrégations)
+# Ces modèles lisent les données nettoyées du staging (stg_students)
+# et produisent les indicateurs d'analyse sociodémographique
+models:
+
+  # Indicateurs 1, 2, 3, 4 : vue synthétique par année
+  # Effectifs, répartition genre, % femmes, taux de non-réponse
+  - name: int_students_by_year
+    description: >-
+      Effectifs et répartition genre par année.
+      Inclut le nombre d'inscriptions, d'étudiants distincts,
+      la répartition H/F/NR, le taux de non-réponse,
+      et le pourcentage de femmes parmi les répondants.
+    columns:
+      # Dimension temporelle : chaque ligne = une année
+      - name: year_started
+        data_tests:
+          - not_null  # Aucune année manquante
+          - accepted_values:  # Plage attendue du dataset
+              arguments:
+                values: [2022, 2023, 2024, 2025]
+      # Effectif total : doit être > 0 pour chaque année
+      - name: nb_students
+        data_tests:
+          - not_null  # Chaque année a des étudiants
+
+  # Indicateur 5 : distribution par tranche d'âge
+  # Profil type de l'étudiant Data, évolution dans le temps
+  - name: int_age_distribution
+    description: >-
+      Distribution par tranche d'âge et par année.
+      Calcule le pourcentage de chaque tranche et identifie
+      la tranche dominante (RANK). Permet de voir si le public
+      rajeunit ou vieillit au fil des années.
+    columns:
+      - name: year_started
+        data_tests:
+          - not_null  # Chaque ligne a une année
+      # Le pourcentage doit exister pour chaque combinaison âge/année
+      - name: pct_of_year
+        data_tests:
+          - not_null  # Pas de pourcentage manquant
+
+  # Indicateurs 6 et 7 : distribution géographique
+  # Top régions + concentration IDF vs province
+  - name: int_region_distribution
+    description: >-
+      Distribution par région et par année.
+      Identifie les bassins de recrutement (RANK),
+      et mesure la concentration Île-de-France vs province
+      pour évaluer l'accessibilité territoriale.
+    columns:
+      - name: year_started
+        data_tests:
+          - not_null  # Chaque ligne a une année
+      # Aucune région ne doit être NULL dans les agrégats
+      - name: region
+        data_tests:
+          - not_null  # Pas de région manquante
+
+  # Indicateurs 2, 3, 4 : détail du genre par année
+  # Format détaillé (une ligne par genre par année) pour les graphiques
+  - name: int_gender_evolution
+    description: >-
+      Évolution détaillée du genre par année.
+      Une ligne par modalité (M, F, Non renseigné) par année.
+      Calcule les pourcentages sur le total et parmi les répondants.
+      Format adapté à la création de graphiques d'évolution.
+    columns:
+      # Après nettoyage staging, seules 3 valeurs possibles
+      - name: gender
+        data_tests:
+          - not_null  # Pas de genre NULL dans les agrégats
+          - accepted_values:  # Cohérence avec le nettoyage staging
+              arguments:
+                values: ['M', 'F', 'Non renseigné']

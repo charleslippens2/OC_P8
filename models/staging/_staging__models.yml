@@ -1,0 +1,53 @@
+# Version 2 du format YAML DBT (standard actuel)
+version: 2
+
+# Documentation et tests des modèles staging (données APRÈS nettoyage)
+# Différent de _staging__sources.yml qui teste les données AVANT nettoyage
+models:
+  - name: stg_students
+    description: >-
+      Données étudiants nettoyées. Les valeurs manquantes du genre
+      sont étiquetées 'Non renseigné' conformément au RGPD
+      (respect du droit de non-réponse, pas d'imputation).
+      Le USER_ID est conservé tel quel (pseudonymisé).
+      Finalité : analyse sociodémographique pour l'égalité des chances.
+    columns:
+      # Identifiant pseudonymisé - le RGPD s'applique (donnée personnelle indirecte)
+      # Pas de test unique ici car 568 étudiants apparaissent sur plusieurs années
+      # L'unicité est testée sur USER_ID + year_started dans tests/
+      - name: USER_ID
+        description: Identifiant pseudonymisé (hash) - donnée personnelle indirecte
+        data_tests:
+          - not_null  # Aucune ligne sans identifiant
+
+      # Donnée sensible art. 9 RGPD
+      # Après nettoyage : les NULL et vides sont devenus 'Non renseigné'
+      # Pas d'imputation = respect du droit de non-réponse
+      - name: gender
+        description: Genre déclaré. Donnée sensible art. 9 RGPD.
+        data_tests:
+          - not_null  # Plus aucun NULL après nettoyage staging
+          - accepted_values:  # Seules valeurs autorisées après nettoyage
+              arguments:
+                values: ['M', 'F', 'Non renseigné']
+
+      # Dimension temporelle de l'analyse (2022 à 2025)
+      - name: year_started
+        description: Année de début du parcours
+        data_tests:
+          - not_null  # Aucune année manquante
+          - accepted_values:  # Plage attendue du dataset
+              arguments:
+                values: [2022, 2023, 2024, 2025]
+
+      # Dimension âge - tranches d'âge (pas l'âge exact = minimisation RGPD)
+      - name: age_group
+        description: Tranche d'âge de l'étudiant
+        data_tests:
+          - not_null  # Aucune tranche manquante
+
+      # Dimension géographique - granularité régionale (pas l'adresse = minimisation RGPD)
+      - name: region
+        description: Région de résidence
+        data_tests:
+          - not_null  # Aucune région manquante

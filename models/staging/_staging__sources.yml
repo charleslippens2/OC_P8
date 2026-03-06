@@ -1,0 +1,48 @@
+# Déclaration des sources dans DBT
+# Les sources référencent les tables qui existent DÉJÀ dans Snowflake
+# DBT ne les crée pas, il les utilise dans les modèles SQL via :
+#   {{ source('oc_raw', 'STUDENTS') }}
+# Ce qui sera remplacé par OC_P8.RAW.STUDENTS lors de la compilation
+
+version: 2
+
+sources:
+  # Nom logique de la source (alias interne à DBT)
+  # Utilisé dans les modèles SQL : {{ source('oc_raw', 'STUDENTS') }}
+  - name: oc_raw
+    description: >-
+      Données brutes internes OpenClassrooms.
+      Étudiants inscrits aux parcours Data (2022-2025).
+    # Emplacement dans Snowflake : OC_P8.RAW
+    database: OC_P8  # Base de données Snowflake
+    schema: RAW       # Schéma contenant les données brutes
+    tables:
+      # Nom exact de la table dans Snowflake (sensible à la casse)
+      - name: STUDENTS
+        description: Table des étudiants Data OC
+        columns:
+          # Identifiant pseudonymisé (hash) - RGPD : donnée personnelle indirecte
+          # Pas de test unique car 568 étudiants apparaissent sur plusieurs années
+          # (réinscriptions = cas métier normal)
+          - name: USER_ID
+            description: Identifiant pseudonymisé non nul
+            data_tests:
+              - not_null  # Vérifie qu'aucune ligne n'a un USER_ID vide dans RAW
+
+          # Tranche d'âge (pas l'âge exact = minimisation RGPD)
+          - name: AGE_GROUP
+            description: Classe d'âge de l'étudiant
+
+          # Donnée sensible art. 9 RGPD
+          # Contient des valeurs vides dans RAW (~27%)
+          # Le nettoyage se fait dans le staging, pas ici
+          - name: GENDER
+            description: Genre déclaré (M/F, nullable)
+
+          # Granularité régionale (pas l'adresse = minimisation RGPD)
+          - name: REGION
+            description: Région de résidence
+
+          # Dimension temporelle de l'analyse
+          - name: YEAR_PATH_STARTED
+            description: Année de début du parcours
