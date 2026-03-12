@@ -1,0 +1,20 @@
+version: 2
+models:
+  - name: mart_sociodemographic
+    columns:
+      - name: year_started
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [2022, 2023, 2024, 2025]
+      - name: nb_students
+        data_tests: [not_null]
+  - name: mart_comparison_insee
+    columns:
+      - name: dimension
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['region', 'genre', 'age']
