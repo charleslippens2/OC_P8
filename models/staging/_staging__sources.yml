@@ -7,42 +7,83 @@
 version: 2
 
 sources:
-  # Nom logique de la source (alias interne à DBT)
-  # Utilisé dans les modèles SQL : {{ source('oc_raw', 'STUDENTS') }}
   - name: oc_raw
     description: >-
       Données brutes internes OpenClassrooms.
       Étudiants inscrits aux parcours Data (2022-2025).
-    # Emplacement dans Snowflake : OC_P8.RAW
-    database: OC_P8  # Base de données Snowflake
-    schema: RAW       # Schéma contenant les données brutes
+      Données pseudonymisées - RGPD applicable.
+    database: OC_P8
+    schema: RAW
     tables:
-      # Nom exact de la table dans Snowflake (sensible à la casse)
       - name: STUDENTS
-        description: Table des étudiants Data OC
+        description: Table des étudiants Data OC (4647 lignes)
         columns:
-          # Identifiant pseudonymisé (hash) - RGPD : donnée personnelle indirecte
-          # Pas de test unique car 568 étudiants apparaissent sur plusieurs années
-          # (réinscriptions = cas métier normal)
           - name: USER_ID
-            description: Identifiant pseudonymisé non nul
+            description: Identifiant pseudonymisé (hash) - donnée personnelle indirecte
             data_tests:
-              - not_null  # Vérifie qu'aucune ligne n'a un USER_ID vide dans RAW
+              - not_null
 
-          # Tranche d'âge (pas l'âge exact = minimisation RGPD)
+          # Pas de test unique : 568 étudiants apparaissent sur plusieurs années
+          # (réinscriptions = cas métier normal, vérifié avec clé composite)
+
+          - name: PATH_CATEGORY_NAME
+            description: Catégorie du parcours (tous = Data)
+            # Pas de test : colonne informative, pas utilisée dans les calculs
+
           - name: AGE_GROUP
-            description: Classe d'âge de l'étudiant
+            description: Tranche d'âge quinquennale (minimisation RGPD)
+            data_tests:
+              - not_null  # Chaque étudiant doit avoir une tranche d'âge
 
-          # Donnée sensible art. 9 RGPD
-          # Contient des valeurs vides dans RAW (~27%)
-          # Le nettoyage se fait dans le staging, pas ici
           - name: GENDER
-            description: Genre déclaré (M/F, nullable)
+            description: Genre déclaré (M/F, nullable) - donnée sensible art. 9 RGPD
+            # PAS de test not_null ici : ~27% de valeurs vides dans RAW
+            # C'est normal et attendu. Le nettoyage (vide → 'Non renseigné')
+            # se fait dans le staging, et les tests sont dans _staging__models.yml
 
-          # Granularité régionale (pas l'adresse = minimisation RGPD)
           - name: REGION
-            description: Région de résidence
+            description: Région de résidence (granularité régionale = minimisation RGPD)
+            data_tests:
+              - not_null  # Chaque étudiant doit avoir une région
 
-          # Dimension temporelle de l'analyse
           - name: YEAR_PATH_STARTED
-            description: Année de début du parcours
+            description: Année de début du parcours (2022-2025)
+            data_tests:
+              - not_null  # Chaque inscription a une année
+
+  - name: insee
+    description: >-
+      Données publiques INSEE - Population française par région,
+      sexe et tranche d'âge. Open data, licence ouverte.
+      Aucune donnée personnelle, aucune problématique RGPD.
+      Source : https://www.insee.fr/fr/statistiques/8721456
+    database: OC_P8
+    schema: RAW_INSEE
+    tables:
+      - name: POPULATION_REGION
+        description: Population par région, sexe et âge (2022-2025, 4560 lignes)
+        columns:
+          - name: REGION
+            description: Nom de la région française
+            data_tests:
+              - not_null  # Chaque ligne a une région
+
+          - name: SEXE
+            description: Hommes / Femmes / Ensemble
+            data_tests:
+              - not_null  # Chaque ligne a un sexe
+
+          - name: AGE_GROUP
+            description: Tranche d'âge quinquennale INSEE
+            data_tests:
+              - not_null  # Chaque ligne a une tranche
+
+          - name: POPULATION
+            description: Effectif de population
+            data_tests:
+              - not_null  # Pas de population manquante
+
+          - name: ANNEE
+            description: Année de référence
+            data_tests:
+              - not_null  # Chaque ligne a une année

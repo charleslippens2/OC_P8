@@ -1,7 +1,7 @@
 -- int_gender_evolution.sql
 -- Modèle intermédiaire : évolution détaillée du genre par année
 --
--- Indicateurs produits :
+-- Indicateurs détaillés produits :
 --   2. Répartition H/F par année (dimension genre)
 --       Mesurer la parité et son évolution année par année
 --   3. % femmes parmi les répondants (dimension genre)
