@@ -18,3 +18,5 @@ models:
           - accepted_values:
               arguments:
                 values: ['region', 'genre', 'age']
+- name: mart_livrable_csv
+    description: "Export consolidé de tous les indicateurs pour le livrable CSV. Slides 8-9 depuis les intermediates, slides 10-11-12 depuis mart_comparison_insee, slide 14 depuis mart_sociodemographic."

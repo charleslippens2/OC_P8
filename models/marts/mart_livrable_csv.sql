@@ -1,7 +1,8 @@
--- mart_all_indicators.sql
+-- mart_livrable_csv.sql
 -- Fichier unique consolidé pour le livrable CSV
+-- Chaque bloc correspond à une slide du PPT
 
--- Slide 8 : effectifs par année
+-- Slide 8 : effectifs par année (source: int_students_by_year)
 SELECT 'effectifs_annuels' AS source_table,
        year_started::VARCHAR AS dimension,
        NULL AS detail,
@@ -12,7 +13,7 @@ FROM {{ ref('int_students_by_year') }}
 
 UNION ALL
 
--- Slide 9 : répartition genre par année
+-- Slide 9 : répartition genre par année (source: int_gender_evolution)
 SELECT 'genre_evolution',
        year_started::VARCHAR,
        gender,
@@ -23,46 +24,50 @@ FROM {{ ref('int_gender_evolution') }}
 
 UNION ALL
 
--- Slide 10 : répartition âge
+-- Slide 10 : répartition âge global (source: mart_comparison_insee)
 SELECT 'age_distribution',
-       year_started::VARCHAR,
-       age_group,
-       nb_students,
-       pct_of_year,
-       NULL
-FROM {{ ref('int_age_distribution') }}
+       'global',
+       detail,
+       pct_oc,
+       pct_insee,
+       ecart_pts
+FROM {{ ref('mart_comparison_insee') }}
+WHERE dimension = 'age'
 
 UNION ALL
 
--- Slide 11 : répartition régions
+-- Slide 11 : répartition régions global (source: mart_comparison_insee)
 SELECT 'region_distribution',
-       year_started::VARCHAR,
-       region,
-       nb_students,
-       pct_of_year,
-       NULL
-FROM {{ ref('int_region_distribution') }}
+       'global',
+       detail,
+       pct_oc,
+       pct_insee,
+       ecart_pts
+FROM {{ ref('mart_comparison_insee') }}
+WHERE dimension = 'region'
 
 UNION ALL
 
--- Slide 12 : comparaison OC vs INSEE
-SELECT 'comparaison_insee',
+-- Slides 12 et 14 : tableau comparaison + synthèse recommandations (3 lignes clés)
+SELECT 'comparaison_synthese' AS source_table,
        dimension,
        detail,
        pct_oc,
        pct_insee,
        ecart_pts
 FROM {{ ref('mart_comparison_insee') }}
+WHERE (dimension = 'genre' AND detail = 'Femmes')
+   OR (dimension = 'region' AND detail = 'Île-de-France')
 
 UNION ALL
 
--- Slide 14 : synthèse annuelle
-SELECT 'synthese_annuelle',
-       year_started::VARCHAR,
-       top_region || ' / ' || top_age_group,
-       nb_students,
-       pct_top_region,
-       pct_idf
-FROM {{ ref('mart_sociodemographic') }}
-
-ORDER BY source_table, dimension
+-- Slides 12 et 14 : ligne 25-39 ans agrégée
+SELECT 'comparaison_synthese',
+       'age',
+       '25-39 ans',
+       SUM(pct_oc),
+       SUM(pct_insee),
+       ROUND(SUM(pct_oc) - SUM(pct_insee), 1)
+FROM {{ ref('mart_comparison_insee') }}
+WHERE dimension = 'age'
+  AND detail IN ('25-29 ans', '30-34 ans', '35-39 ans')
