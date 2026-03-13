@@ -25,17 +25,26 @@ models:
   - name: mart_livrable_csv
     description: "Export consolidé de tous les indicateurs pour le livrable CSV. Slides 8-9 depuis les intermediates, slides 10-11-12-14 depuis mart_comparison_insee."
     columns:
+      - name: slide
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [8, 9, 10, 11, 12]
       - name: source_table
         data_tests:
           - not_null
           - accepted_values:
               arguments:
                 values:
-                  - 'effectifs_annuels'
-                  - 'genre_evolution'
-                  - 'age_distribution'
-                  - 'region_distribution'
-                  - 'comparaison_synthese'
+                  - 'S08_effectifs_par_annee'
+                  - 'S09_parite_homme_femme'
+                  - 'S10_distribution_age'
+                  - 'S11_repartition_geographique'
+                  - 'S12_S14_comparaison_insee_synthese'
       - name: dimension
+        data_tests:
+          - not_null
+      - name: rang
         data_tests:
           - not_null
