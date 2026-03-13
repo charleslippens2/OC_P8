@@ -1,4 +1,5 @@
 version: 2
+
 models:
   - name: mart_sociodemographic
     columns:
@@ -9,7 +10,9 @@ models:
               arguments:
                 values: [2022, 2023, 2024, 2025]
       - name: nb_students
-        data_tests: [not_null]
+        data_tests:
+          - not_null
+
   - name: mart_comparison_insee
     columns:
       - name: dimension
@@ -18,3 +21,21 @@ models:
           - accepted_values:
               arguments:
                 values: ['region', 'genre', 'age']
+
+  - name: mart_livrable_csv
+    description: "Export consolidé de tous les indicateurs pour le livrable CSV. Slides 8-9 depuis les intermediates, slides 10-11-12-14 depuis mart_comparison_insee."
+    columns:
+      - name: source_table
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values:
+                  - 'effectifs_annuels'
+                  - 'genre_evolution'
+                  - 'age_distribution'
+                  - 'region_distribution'
+                  - 'comparaison_synthese'
+      - name: dimension
+        data_tests:
+          - not_null
