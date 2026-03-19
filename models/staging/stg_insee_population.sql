@@ -1,88 +1,54 @@
 -- stg_insee_population.sql
--- Modèle staging : nettoyage et mapping des données INSEE au format OC
+-- Nettoyage des données INSEE pour les rendre comparables avec les données OC.
+-- Sans ce mapping, les JOIN dans mart_comparison_insee échoueraient
+-- (noms de régions, tranches d'âge et codes sexe différents entre les 2 sources).
 --
--- RÔLE : transformer les données brutes INSEE (RAW_INSEE.POPULATION_REGION)
---        pour qu'elles soient COMPARABLES avec les données OC (stg_students).
---        Sans ce mapping, les JOIN dans mart_comparison_insee échoueraient
---        car les noms de régions, tranches d'âge et sexes sont différents.
+-- Approche ELT : le CSV brut a été chargé tel quel dans Snowflake (RAW_INSEE).
+-- Tout le nettoyage se fait ici dans dbt, pas en Python ni Excel.
 --
--- CONFORMITÉ ELT :
---        Le CSV brut a été chargé tel quel dans Snowflake (Load = brut).
---        Ce modèle fait le Transform dans DBT (pas en Python, pas dans Excel).
---        Les données brutes restent dans RAW_INSEE (traçabilité).
+-- 3 étapes :
+--   1. source     → lecture brute (~4560 lignes)
+--   2. mapped     → harmonisation régions, sexe, tranches d'âge
+--   3. aggregated → regroupement des 60+ (8 tranches → 1) et des DROM (6 → 1)
 --
--- SOURCE : INSEE - Estimation de population au 1er janvier 2026
---          https://www.insee.fr/fr/statistiques/8721456
---          Open data, licence ouverte, aucune donnée personnelle → pas de RGPD
+-- Résultat : ~1620 lignes (15 régions × 3 sexes × 9 tranches × 4 années)
 --
--- CE QUE FAIT CE MODÈLE (3 étapes) :
---   1. source   → lit les données brutes depuis RAW_INSEE
---   2. mapped   → renomme/regroupe les régions, tranches d'âge et sexes
---   3. aggregated → agrège les populations (nécessaire car les 60+ et DROM
---                   sont regroupés : 8 lignes INSEE → 1 ligne OC pour 60+)
---
--- ENTRÉE : ~4560 lignes (19 régions × 3 sexes × 20 tranches × 4 années)
--- SORTIE : ~1620 lignes (15 régions × 3 sexes × 9 tranches × 4 années)
---   Réduction car : < 20 ans exclus (4 tranches), 60+ regroupés (8→1),
---   DROM regroupés (6 lignes→1), Corse gardée (dans INSEE mais pas OC)
+-- Source INSEE : Estimations de population au 1er janvier 2026
+-- https://www.insee.fr/fr/statistiques/8721456
+-- Open data, aucune donnée personnelle, pas de RGPD.
 
 
 WITH source AS (
-    -- Étape 1 : lire les données brutes de la table INSEE dans Snowflake
-    -- Cette table a été chargée via Load Data (CSV → Snowflake)
-    -- 5 colonnes : REGION, SEXE, AGE_GROUP, POPULATION, ANNEE
-    -- Aucun filtre ici : le staging lit TOUT, le filtrage se fait après
     SELECT * FROM {{ source('insee', 'POPULATION_REGION') }}
 ),
 
 mapped AS (
-    -- Étape 2 : mapper les valeurs INSEE vers le format OC
-    -- 3 mappings nécessaires : régions, sexe, tranches d'âge
     SELECT
 
-        -- === MAPPING RÉGIONS ===
-        -- Problème 1 : Centre-Val-de-Loire (tirets dans INSEE) vs Centre-Val de Loire (espaces dans OC)
-        --   Si on ne corrige pas, le JOIN dans le mart ne matchera PAS ces 2 régions
-        -- Problème 2 : les DROM sont séparés dans l'INSEE (Guadeloupe, Martinique, etc.)
-        --   mais regroupés dans OC sous "DROM"
-        --   Le GROUP BY + SUM dans l'étape aggregated additionnera les populations
-        -- Problème 3 : DOM est une ligne de total dans l'INSEE (doublon avec les DROM individuels)
-        --   On le mappe aussi sur 'DROM' et le SUM gèrera la déduplication
-        --   ATTENTION : il faudra vérifier s'il y a double-comptage (DOM + DROM individuels)
-        -- Corse : présente dans l'INSEE mais ABSENTE d'OC
-        --   On la garde (ELSE REGION) → elle apparaîtra avec pct_oc = NULL dans le mart
+        -- Régions : 3 problèmes à résoudre
+        --  • Centre-Val-de-Loire (tirets INSEE) vs Centre-Val de Loire (espaces OC)
+        --  • DROM séparés dans l'INSEE, regroupés en un seul "DROM" côté OC
+        --  • Corse : présente dans l'INSEE mais absente d'OC → gardée, apparaîtra avec pct_oc = NULL
         CASE
             WHEN REGION = 'Centre-Val-de-Loire' THEN 'Centre-Val de Loire'
             WHEN REGION IN (
                 'Guadeloupe', 'Martinique', 'Guyane',
                 'La Réunion', 'Mayotte', 'DOM'
             ) THEN 'DROM'
-            ELSE REGION  -- Les 12 autres régions métro + Corse passent telles quelles
+            ELSE REGION
         END AS region,
 
-        -- === MAPPING SEXE ===
-        -- INSEE utilise 'Hommes'/'Femmes'/'Ensemble'
-        -- OC utilise 'M'/'F' (pas d'Ensemble)
-        -- On garde 'Ensemble' car utile pour calculer les % par région/âge
-        --   dans le mart (dénominateur = population totale, pas H+F séparément)
-        -- Le 'Non renseigné' d'OC n'existe pas dans l'INSEE (tout le monde est classé)
+        -- Sexe : INSEE utilise les libellés complets, OC utilise M/F
+        -- On garde 'Ensemble' (= total H+F) pour les calculs de % dans le mart
         CASE
             WHEN SEXE = 'Hommes' THEN 'M'
             WHEN SEXE = 'Femmes' THEN 'F'
             WHEN SEXE = 'Ensemble' THEN 'Ensemble'
         END AS sexe,
 
-        -- === MAPPING TRANCHES D'ÂGE ===
-        -- INSEE : "20 à 24 ans" (avec 'à')  →  OC : "20-24 ans" (avec tiret)
-        -- Si on ne renomme pas, le JOIN par age_group ne matchera PAS
-        --
-        -- Cas spécial : les 8 tranches ≥ 60 ans de l'INSEE sont toutes mappées
-        -- sur '60 ans ou plus' (la seule tranche 60+ d'OC).
-        -- Le GROUP BY + SUM dans l'étape aggregated additionnera les 8 populations.
-        -- Exemple IDF 2023 : 60-64=750K + 65-69=680K + ... + 95+=30K = 3 270K total
-        --
-        -- Cas spécial : les < 20 ans (0-4, 5-9, 10-14, 15-19) n'existent pas dans OC
-        -- → mappés sur NULL, puis exclus par WHERE age_group IS NOT NULL dans l'étape aggregated
+        -- Tranches d'âge : "20 à 24 ans" (INSEE) → "20-24 ans" (format OC)
+        -- Les 8 tranches ≥ 60 ans → regroupées en "60 ans ou plus" (seule tranche OC)
+        -- Les < 20 ans → NULL, exclus à l'étape suivante (pas d'étudiants < 20 dans OC)
         CASE
             WHEN AGE_GROUP = '20 à 24 ans' THEN '20-24 ans'
             WHEN AGE_GROUP = '25 à 29 ans' THEN '25-29 ans'
@@ -96,46 +62,30 @@ mapped AS (
                 '60 à 64 ans', '65 à 69 ans', '70 à 74 ans',
                 '75 à 79 ans', '80 à 84 ans', '85 à 89 ans',
                 '90 à 94 ans', '95 ans et plus'
-            ) THEN '60 ans ou plus'      -- 8 tranches → 1 seule (additionné par SUM)
-            ELSE NULL                     -- < 20 ans → exclus à l'étape suivante
+            ) THEN '60 ans ou plus'
+            ELSE NULL
         END AS age_group,
 
-        -- Population et année conservées telles quelles (données brutes)
         POPULATION,
-        ANNEE AS annee  -- Renommage minuscule pour cohérence avec stg_students (year_started)
+        ANNEE AS annee
 
     FROM source
 ),
 
 aggregated AS (
-    -- Étape 3 : agréger les populations après le mapping
-    --
-    -- POURQUOI cette étape est nécessaire :
-    --   Après le mapping, plusieurs lignes INSEE ont la MÊME combinaison
-    --   region + sexe + age_group + annee :
-    --
-    --   Cas 1 - Les 60+ : 8 lignes INSEE (60-64, 65-69, ..., 95+) sont toutes
-    --     mappées sur '60 ans ou plus'. Le SUM additionne les 8 populations.
-    --
-    --   Cas 2 - Les DROM : 6 lignes INSEE (Guadeloupe, Martinique, Guyane,
-    --     La Réunion, Mayotte, DOM) sont toutes mappées sur 'DROM'.
-    --     Le SUM additionne les populations des 6 territoires.
-    --
-    --   Sans cette agrégation, on aurait des doublons dans les JOIN du mart.
-    --
-    -- WHERE age_group IS NOT NULL : exclut les < 20 ans (mappés sur NULL)
-    --   Car OC n'a pas d'étudiants de moins de 20 ans → pas comparable
+    -- Agrégation nécessaire car le mapping a créé des doublons intentionnels :
+    --  • 8 lignes 60+ → 1 seule "60 ans ou plus" (SUM des populations)
+    --  • 6 lignes DROM → 1 seul "DROM" (SUM des populations)
+    -- WHERE exclut les < 20 ans (NULL après mapping)
     SELECT
         region,
         sexe,
         age_group,
-        SUM(POPULATION) AS population,  -- Additionne les 60+ et les DROM
+        SUM(POPULATION) AS population,
         annee
     FROM mapped
-    WHERE age_group IS NOT NULL  -- Exclut 0-4, 5-9, 10-14, 15-19 ans
+    WHERE age_group IS NOT NULL
     GROUP BY region, sexe, age_group, annee
 )
 
--- Résultat final : données INSEE nettoyées et comparables avec OC
--- Prêt pour le JOIN dans mart_comparison_insee.sql
 SELECT * FROM aggregated

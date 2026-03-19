@@ -2,20 +2,35 @@ version: 2
 
 models:
   - name: mart_sociodemographic
+    description: >-
+      Synthèse annuelle pour la direction : une ligne par année avec
+      le top région, le top tranche d'âge, et le % IDF.
+      Joint les 4 modèles intermédiaires. Alimente la slide 14
+      (recommandations) avec les tendances par année.
     columns:
       - name: year_started
+        description: Année d'inscription (2022 à 2025, une ligne par année)
         data_tests:
           - not_null
           - accepted_values:
               arguments:
                 values: [2022, 2023, 2024, 2025]
       - name: nb_students
+        description: Nombre total d'inscriptions dans l'année
         data_tests:
           - not_null
 
   - name: mart_comparison_insee
+    description: >-
+      Modèle pivot du projet : croise le profil OC (toutes années)
+      avec la population INSEE 2023 sur 3 dimensions (région, genre, âge).
+      Structure UNION ALL — ~25 lignes avec pct_oc, pct_insee, ecart_pts.
+      Lit les staging directement (pas les intermédiaires) car la
+      comparaison est globale, pas par année.
+      Alimente les slides 10 (âge), 11 (géo), 12 (tableau) et 14 (synthèse).
     columns:
       - name: dimension
+        description: "Axe de comparaison : region, genre ou age"
         data_tests:
           - not_null
           - accepted_values:
@@ -23,15 +38,26 @@ models:
                 values: ['region', 'genre', 'age']
 
   - name: mart_livrable_csv
-    description: "Export consolidé de tous les indicateurs pour le livrable CSV. Slides 8-9 depuis les intermediates, slides 10-11-12-14 depuis mart_comparison_insee."
+    description: >-
+      Modèle utilitaire d'export — consolide tous les indicateurs
+      en un seul fichier CSV livrable. Chaque bloc est étiqueté par
+      numéro de slide (S08_ à S12_S14_). Ne fait aucun calcul,
+      juste un assemblage UNION ALL des intermédiaires et du mart.
+      Filtrable par source_table pour retrouver les données
+      de chaque graphique du support de présentation.
     columns:
       - name: slide
+        description: Numéro de la slide alimentée par ce bloc
         data_tests:
           - not_null
           - accepted_values:
               arguments:
                 values: [8, 9, 10, 11, 12]
       - name: source_table
+        description: >-
+          Identifiant du bloc — correspond au titre du graphique
+          ou tableau de la slide. Permet de filtrer le CSV
+          pour retrouver les données d'une slide spécifique.
         data_tests:
           - not_null
           - accepted_values:
@@ -43,8 +69,10 @@ models:
                   - 'S11_repartition_geographique'
                   - 'S12_S14_comparaison_insee_synthese'
       - name: dimension
+        description: "Année (pour slides 8-9) ou 'global' (pour slides 10-11) ou dimension INSEE (pour slide 12)"
         data_tests:
           - not_null
       - name: rang
+        description: Ordre d'affichage dans le graphique (tri par année, par âge, ou par % décroissant selon le bloc)
         data_tests:
           - not_null
