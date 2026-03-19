@@ -1,25 +1,23 @@
 -- int_age_distribution.sql
--- Modèle intermédiaire : distribution par tranche d'âge et par année
+-- Distribution par tranche d'âge et par année.
 --
--- Indicateurs produits :
---   5a. Distribution par tranche d'âge (% et rang)
---       Profil type de l'étudiant Data, évolution dans le temps
---       Identifier si le public rajeunit ou vieillit au fil des années
---   5b. Âge moyen approximatif par année
---       Estimation basée sur le point milieu de chaque tranche
---       Limite : "60 ans ou plus" codé à 65 (arbitraire)
+-- Produit :
+--   • % et rang de chaque tranche par année (slide 10 en global, backup oral par année)
+--   • Âge moyen estimé par année (estimation par point milieu de tranche)
 --
--- Méthode : 3 CTE séparées pour lisibilité et testabilité
---   counts  → effectifs par tranche et par année
---   totals  → total annuel (pour calculer les pourcentages)
---   age_moyen → estimation âge moyen (point milieu de chaque tranche)
--- Puis jointure des 3 pour assembler le résultat final.
+-- Architecture : 3 CTE pour séparer les responsabilités
+--   counts    → effectifs bruts par tranche/année
+--   totals    → total annuel (dénominateur des %)
+--   age_moyen → estimation âge moyen (point milieu)
 --
--- Le RANK() identifie automatiquement la tranche dominante
--- (pas codée en dur → s'adapte si le profil change).
+-- Le RANK() identifie la tranche dominante automatiquement —
+-- pas codé en dur, s'adapte si le profil évolue.
+--
+-- Limite connue : la tranche "60 ans ou plus" est codée à 65 pour
+-- le calcul de l'âge moyen. Arbitraire (pourrait être 70 ou 75),
+-- mais l'impact est faible car cette tranche ne représente que 1,6%.
 
 WITH counts AS (
-    -- Effectifs par tranche d'âge et par année
     SELECT
         year_started,
         age_group,
@@ -29,7 +27,6 @@ WITH counts AS (
 ),
 
 totals AS (
-    -- Total d'étudiants par année (dénominateur des pourcentages)
     SELECT
         year_started,
         SUM(nb_students) AS total_year
@@ -38,11 +35,8 @@ totals AS (
 ),
 
 age_moyen AS (
-    -- Âge moyen approximatif par année
-    -- Méthode : point milieu de chaque tranche quinquennale
-    -- Ex : "20-24 ans" → 22, "25-29 ans" → 27, etc.
-    -- Limite : "60 ans ou plus" codé à 65 (pourrait être 70 ou 75)
-    -- C'est une estimation, pas un calcul exact (données = tranches, pas âge réel)
+    -- Estimation par point milieu de chaque tranche quinquennale
+    -- Ce n'est pas un âge exact — les données source sont des tranches, pas des dates de naissance
     SELECT
         year_started,
         ROUND(AVG(
@@ -67,20 +61,14 @@ SELECT
     c.age_group,
     c.nb_students,
     t.total_year,
-
-    -- Pourcentage de la tranche d'âge dans l'année
-    -- Ex : 30-34 ans = 24.1% en 2023
     ROUND(c.nb_students * 100.0 / t.total_year, 1) AS pct_of_year,
 
-    -- Rang de la tranche dans l'année (1 = tranche la plus représentée)
-    -- Utilisé par le mart pour récupérer automatiquement la top tranche
+    -- Rang 1 = tranche la plus représentée de l'année
     RANK() OVER (
         PARTITION BY c.year_started
         ORDER BY c.nb_students DESC
     ) AS rang,
 
-    -- Âge moyen approximatif (identique pour toutes les tranches d'une même année)
-    -- Affiché en complément dans la présentation
     a.age_moyen_approx
 
 FROM counts c

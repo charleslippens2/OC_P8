@@ -1,18 +1,15 @@
 -- int_region_distribution.sql
--- Modèle intermédiaire : distribution par région et par année
+-- Répartition géographique par année.
 --
--- Indicateurs produits :
---   6. Top régions par année (dimension géographique)
---       Identifier les bassins de recrutement principaux
---   7. Concentration IDF vs province (dimension géographique)
---       Mesurer l'accessibilité territoriale de la formation
---       L'IDF concentre ~45% des étudiants vs ~18% de la population française
+-- Produit :
+--   • % et rang de chaque région par année (backup oral pour l'évolution IDF)
+--   • Classification IDF / Province pour mesurer la concentration territoriale
 --
--- Méthode : CTE avec effectifs par région, jointure avec totaux annuels,
--- classification IDF/Province pour l'indicateur de concentration.
+-- Constat clé : l'IDF concentre ~45% des étudiants vs ~17% de la population.
+-- Ce modèle permet de vérifier si cette concentration évolue par année
+-- (pic à 54% en 2023, retour à ~41% en 2024-2025).
 
 WITH counts AS (
-    -- Effectifs par région et par année
     SELECT
         year_started,
         region,
@@ -22,7 +19,6 @@ WITH counts AS (
 ),
 
 totals AS (
-    -- Total d'étudiants par année
     SELECT
         year_started,
         SUM(nb_students) AS total_year
@@ -35,21 +31,15 @@ SELECT
     c.region,
     c.nb_students,
     t.total_year,
-
-    -- Pourcentage de la région dans l'année
-    -- Ex : Île-de-France = 45,6% en 2022
     ROUND(c.nb_students * 100.0 / t.total_year, 1) AS pct_of_year,
 
-    -- Indicateur 7 : Classification IDF vs Province
-    -- Permet de mesurer la concentration géographique
-    -- et l'accessibilité territoriale de la formation
+    -- IDF vs Province — pour mesurer la concentration géographique
     CASE
         WHEN c.region = 'Île-de-France' THEN 'IDF'
         ELSE 'Province'
     END AS zone,
 
-    -- Indicateur 6 : Rang de la région (1 = top région de l'année)
-    -- Identifie les principaux bassins de recrutement
+    -- Rang 1 = région avec le plus d'étudiants dans l'année
     RANK() OVER (PARTITION BY c.year_started ORDER BY c.nb_students DESC) AS rang
 
 FROM counts c

@@ -1,53 +1,61 @@
-# Version 2 du format YAML DBT (standard actuel)
 version: 2
 
-# Documentation et tests des modèles staging (données APRÈS nettoyage)
-# Différent de _staging__sources.yml qui teste les données AVANT nettoyage
+# Tests et documentation des modèles staging
+# Ces tests portent sur les données APRÈS nettoyage (stg_), pas sur les sources brutes
 models:
   - name: stg_students
     description: >-
-      Données étudiants nettoyées. Les valeurs manquantes du genre
-      sont étiquetées 'Non renseigné' conformément au RGPD
-      (respect du droit de non-réponse, pas d'imputation).
-      Le USER_ID est conservé tel quel (pseudonymisé).
-      Finalité : analyse sociodémographique pour l'égalité des chances.
+      Table étudiants nettoyée à partir de OC_P8.RAW.STUDENTS.
+      Nettoyages appliqués : TRIM sur les colonnes texte, genre vide recodé
+      en 'Non renseigné' (choix RGPD art. 9 — pas d'imputation),
+      USER_ID conservé tel quel (déjà pseudonymisé en amont par OC).
+      Les 568 doublons USER_ID sont des réinscriptions sur plusieurs années,
+      pas des erreurs — clé unique retenue : USER_ID + year_started.
     columns:
-      # Identifiant pseudonymisé - le RGPD s'applique (donnée personnelle indirecte)
-      # Pas de test unique ici car 568 étudiants apparaissent sur plusieurs années
-      # L'unicité est testée sur USER_ID + year_started dans tests/
       - name: USER_ID
-        description: Identifiant pseudonymisé (hash) - donnée personnelle indirecte
+        description: >-
+          Identifiant pseudonymisé (hash fourni par OC).
+          Donnée personnelle indirecte au sens du RGPD.
+          Pas de test unique car un même étudiant peut apparaître
+          sur plusieurs années (réinscriptions). L'unicité USER_ID + année
+          est vérifiée dans le test custom unique_student_year.
         data_tests:
-          - not_null  # Aucune ligne sans identifiant
+          - not_null
 
-      # Donnée sensible art. 9 RGPD
-      # Après nettoyage : les NULL et vides sont devenus 'Non renseigné'
-      # Pas d'imputation = respect du droit de non-réponse
       - name: gender
-        description: Genre déclaré. Donnée sensible art. 9 RGPD.
+        description: >-
+          Genre déclaré par l'étudiant (M, F, ou Non renseigné).
+          Donnée sensible au sens de l'art. 9 du RGPD — utilisée
+          uniquement pour l'analyse de parité dans un cadre d'égalité
+          des chances. Les valeurs vides (~27% du dataset) sont conservées
+          comme 'Non renseigné' plutôt qu'imputées, pour ne pas fausser
+          les indicateurs de parité.
         data_tests:
-          - not_null  # Plus aucun NULL après nettoyage staging
-          - accepted_values:  # Seules valeurs autorisées après nettoyage
+          - not_null
+          - accepted_values:
               arguments:
                 values: ['M', 'F', 'Non renseigné']
 
-      # Dimension temporelle de l'analyse (2022 à 2025)
       - name: year_started
-        description: Année de début du parcours
+        description: Année de début du parcours (2022 à 2025)
         data_tests:
-          - not_null  # Aucune année manquante
-          - accepted_values:  # Plage attendue du dataset
+          - not_null
+          - accepted_values:
               arguments:
                 values: [2022, 2023, 2024, 2025]
 
-      # Dimension âge - tranches d'âge (pas l'âge exact = minimisation RGPD)
       - name: age_group
-        description: Tranche d'âge de l'étudiant
+        description: >-
+          Tranche d'âge quinquennale (20-24 ans, 25-29 ans, etc.).
+          On utilise des tranches et non l'âge exact — principe de
+          minimisation RGPD.
         data_tests:
-          - not_null  # Aucune tranche manquante
+          - not_null
 
-      # Dimension géographique - granularité régionale (pas l'adresse = minimisation RGPD)
       - name: region
-        description: Région de résidence
+        description: >-
+          Région de résidence. Granularité régionale uniquement,
+          pas d'adresse ni de département (minimisation RGPD).
+          13 régions métropolitaines + DROM regroupés.
         data_tests:
-          - not_null  # Aucune région manquante
+          - not_null

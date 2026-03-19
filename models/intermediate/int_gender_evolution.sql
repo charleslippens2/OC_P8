@@ -1,41 +1,34 @@
 -- int_gender_evolution.sql
--- Modèle intermédiaire : évolution détaillée du genre par année
+-- Évolution du genre par année — une ligne par modalité (M, F, Non renseigné).
 --
--- Indicateurs détaillés produits :
---   2. Répartition H/F par année (dimension genre)
---       Mesurer la parité et son évolution année par année
---   3. % femmes parmi les répondants (dimension genre)
---       Indicateur de parité excluant les non-réponses
---   4. Taux de non-réponse au genre (dimension genre)
---       Qualité des données + signal sociétal
+-- Produit 3 indicateurs :
+--   • Répartition M/F/NR par année → graphique empilé 100% slide 9
+--   • % femmes parmi les répondants M/F → constat "~31% stable sur 4 ans"
+--   • Taux de non-réponse → constat "42% en 2022 → 7% en 2025"
 --
--- Différence avec int_students_by_year :
---   Ce modèle détaille chaque modalité de genre (M, F, Non renseigné)
---   sur des lignes séparées, ce qui facilite la création de graphiques
---   d'évolution (une courbe par genre).
-
+-- Différence avec int_students_by_year : ici chaque genre est sur une
+-- ligne séparée (format long), adapté aux graphiques d'évolution.
+-- int_students_by_year donne une ligne par année avec tout agrégé.
 
 SELECT
     year_started,
     gender,
 
-    -- Effectif de cette modalité de genre pour l'année
     COUNT(*) AS nb_students,
 
-    -- Total de l'année (window function pour garder le détail par genre)
+    -- Total annuel via window function (évite un CTE supplémentaire)
     SUM(COUNT(*)) OVER (PARTITION BY year_started) AS total_year,
 
-    -- Pourcentage de cette modalité sur le total de l'année
-    -- Ex : M = 50,4%, F = 22,7%, Non renseigné = 26,8%
+    -- % de cette modalité sur le total de l'année (M + F + NR = 100%)
     ROUND(
         COUNT(*) * 100.0
         / SUM(COUNT(*)) OVER (PARTITION BY year_started), 1
     ) AS pct_of_year,
 
-    -- Pourcentage parmi les répondants uniquement (excl. Non renseigné)
-    -- Utile pour calculer la vraie parité H/F
-    -- Ex : si M=50,4% et F=22,7% du total, parmi les répondants
-    --       F = 22,7 / (50,4+22,7) * 100 = 31% environ
+    -- % parmi les répondants M/F uniquement (exclut Non renseigné)
+    -- C'est cet indicateur qui donne le "vrai" ratio de parité :
+    -- ~31% sur 4 ans, indépendamment de la chute des non-réponses
+    -- NULL pour la ligne 'Non renseigné' (pas de sens)
     CASE
         WHEN gender != 'Non renseigné' THEN
             ROUND(
@@ -46,7 +39,7 @@ SELECT
                     OVER (PARTITION BY year_started), 0
                 ), 1
             )
-        ELSE NULL  -- Pas de sens pour 'Non renseigné'
+        ELSE NULL
     END AS pct_among_declared
 
 FROM {{ ref('stg_students') }}

@@ -1,89 +1,95 @@
-# Déclaration des sources dans DBT
-# Les sources référencent les tables qui existent DÉJÀ dans Snowflake
-# DBT ne les crée pas, il les utilise dans les modèles SQL via :
-#   {{ source('oc_raw', 'STUDENTS') }}
-# Ce qui sera remplacé par OC_P8.RAW.STUDENTS lors de la compilation
-
 version: 2
+
+# Déclaration des sources — tables déjà présentes dans Snowflake
+# Référencées dans les modèles via {{ source('oc_raw', 'STUDENTS') }}
+# qui compile en OC_P8.RAW.STUDENTS
 
 sources:
   - name: oc_raw
     description: >-
-      Données brutes internes OpenClassrooms.
-      Étudiants inscrits aux parcours Data (2022-2025).
-      Données pseudonymisées - RGPD applicable.
+      Données brutes OpenClassrooms — étudiants inscrits aux parcours Data
+      entre 2022 et 2025. USER_ID déjà pseudonymisé par OC en amont.
+      RGPD applicable (données personnelles indirectes + genre sensible art. 9).
     database: OC_P8
     schema: RAW
     tables:
       - name: STUDENTS
-        description: Table des étudiants Data OC (4647 lignes)
+        description: >-
+          4647 lignes, une par inscription étudiant.
+          568 USER_ID apparaissent sur plusieurs années (réinscriptions,
+          pas des doublons — vérifié par le test custom unique_student_year).
+          Le champ GENDER contient ~27% de vides dans cette table brute ;
+          le recodage en 'Non renseigné' se fait au staging.
         columns:
           - name: USER_ID
-            description: Identifiant pseudonymisé (hash) - donnée personnelle indirecte
+            description: Identifiant pseudonymisé (hash). Pas de test unique ici car réinscriptions multi-années.
             data_tests:
               - not_null
 
-          # Pas de test unique : 568 étudiants apparaissent sur plusieurs années
-          # (réinscriptions = cas métier normal, vérifié avec clé composite)
-
           - name: PATH_CATEGORY_NAME
-            description: Catégorie du parcours (tous = Data)
-            # Pas de test : colonne informative, pas utilisée dans les calculs
+            description: Catégorie du parcours — tous à 'Data' dans ce dataset. Non utilisée dans les calculs.
 
           - name: AGE_GROUP
-            description: Tranche d'âge quinquennale (minimisation RGPD)
+            description: Tranche d'âge quinquennale (20-24, 25-29, etc.)
             data_tests:
-              - not_null  # Chaque étudiant doit avoir une tranche d'âge
+              - not_null
 
           - name: GENDER
-            description: Genre déclaré (M/F, nullable) - donnée sensible art. 9 RGPD
-            # PAS de test not_null ici : ~27% de valeurs vides dans RAW
-            # C'est normal et attendu. Le nettoyage (vide → 'Non renseigné')
-            # se fait dans le staging, et les tests sont dans _staging__models.yml
+            description: >-
+              Genre déclaré (M/F ou vide). Donnée sensible art. 9 RGPD.
+              ~27% de vides dans le brut — c'est attendu, pas une anomalie.
+              Pas de test not_null ici : le nettoyage (vide → 'Non renseigné')
+              et les tests associés sont dans le staging.
 
           - name: REGION
-            description: Région de résidence (granularité régionale = minimisation RGPD)
+            description: Région de résidence
             data_tests:
-              - not_null  # Chaque étudiant doit avoir une région
+              - not_null
 
           - name: YEAR_PATH_STARTED
             description: Année de début du parcours (2022-2025)
             data_tests:
-              - not_null  # Chaque inscription a une année
+              - not_null
 
   - name: insee
     description: >-
-      Données publiques INSEE - Population française par région,
-      sexe et tranche d'âge. Open data, licence ouverte.
-      Aucune donnée personnelle, aucune problématique RGPD.
+      Données publiques INSEE — estimations de population par région,
+      sexe et âge quinquennal. Open data, licence ouverte, aucune
+      donnée personnelle. Fichier source prétraité par script Python
+      (openpyxl) avant chargement dans Snowflake à cause des en-têtes
+      multi-niveaux et de l'encodage du fichier Excel original.
       Source : https://www.insee.fr/fr/statistiques/8721456
     database: OC_P8
     schema: RAW_INSEE
     tables:
       - name: POPULATION_REGION
-        description: Population par région, sexe et âge (2022-2025, 4560 lignes)
+        description: >-
+          Population française par région, sexe et tranche d'âge.
+          4560 lignes couvrant 2022-2025. Données 2022-2023 définitives,
+          2024-2025 estimations provisoires. Le mart n'utilise que 2023
+          pour la comparaison avec OC.
         columns:
           - name: REGION
             description: Nom de la région française
             data_tests:
-              - not_null  # Chaque ligne a une région
+              - not_null
 
           - name: SEXE
-            description: Hommes / Femmes / Ensemble
+            description: "Hommes, Femmes ou Ensemble (= total H+F, pas un 3ème genre)"
             data_tests:
-              - not_null  # Chaque ligne a un sexe
+              - not_null
 
           - name: AGE_GROUP
-            description: Tranche d'âge quinquennale INSEE
+            description: Tranche d'âge quinquennale INSEE (de 0 à 95+, filtré au staging pour ne garder que 20+)
             data_tests:
-              - not_null  # Chaque ligne a une tranche
+              - not_null
 
           - name: POPULATION
-            description: Effectif de population
+            description: Effectif de population pour cette combinaison région/sexe/âge/année
             data_tests:
-              - not_null  # Pas de population manquante
+              - not_null
 
           - name: ANNEE
-            description: Année de référence
+            description: Année de référence (2022-2025)
             data_tests:
-              - not_null  # Chaque ligne a une année
+              - not_null
