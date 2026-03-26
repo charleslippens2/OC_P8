@@ -21,6 +21,16 @@ Produire des indicateurs exploitables pour la direction pédagogique sur 3 dimen
 | OpenClassrooms | `OC_P8.RAW.STUDENTS` | 4647 inscriptions, 6 variables, 2022-2025 |
 | INSEE | `OC_P8.RAW_INSEE.POPULATION_REGION` | Population par région, sexe, âge quinquennal |
 
+## Prétraitement INSEE
+
+Le fichier Excel INSEE a un format complexe (52 onglets, en-têtes multi-niveaux, cellules fusionnées). Le script `scripts/convert_insee_xlsx_to_csv.py` le transforme en CSV tabulaire plat avant chargement dans Snowflake :
+```bash
+pip install openpyxl
+python scripts/convert_insee_xlsx_to_csv.py
+```
+
+Produit `insee_population_region.csv` → chargé dans `OC_P8.RAW_INSEE.POPULATION_REGION` via Snowflake Load Data.
+
 ## Architecture du pipeline
 ```
 Sources (RAW)          Staging (stg_)         Intermediate (int_)       Marts
@@ -35,21 +45,21 @@ POPULATION_REGION →    stg_insee_population ───────────�
 
 ## Modèles
 
-| Couche | Modèle | Rôle |
-|--------|--------|------|
-| staging | `stg_students` | Nettoyage : TRIM, genre vide → 'Non renseigné', filtre USER_ID NULL |
-| staging | `stg_insee_population` | Harmonisation : régions, sexe (M/F/Ensemble), regroupement 60+ et DROM |
-| intermediate | `int_students_by_year` | Effectifs et répartition genre par année |
-| intermediate | `int_gender_evolution` | Évolution M/F/NR par année (format long) |
-| intermediate | `int_age_distribution` | Distribution âge par année + âge moyen estimé |
-| intermediate | `int_region_distribution` | Répartition géographique par année + rang |
-| mart | `mart_comparison_insee` | Croisement OC global vs INSEE 2023 sur 3 dimensions |
-| mart | `mart_sociodemographic` | Synthèse annuelle (top région, top âge, % IDF) |
-| mart | `mart_livrable_csv` | Export consolidé pour le livrable CSV (un bloc par slide) |
+| Couche | Modèle | Rôle | Matérialisation |
+|--------|--------|------|-----------------|
+| staging | `stg_students` | Nettoyage : TRIM, genre vide → 'Non renseigné', filtre USER_ID NULL | view |
+| staging | `stg_insee_population` | Harmonisation : régions, sexe (M/F/Ensemble), regroupement 60+ et DROM | view |
+| intermediate | `int_students_by_year` | Effectifs et répartition genre par année | view |
+| intermediate | `int_gender_evolution` | Évolution M/F/NR par année (format long) | view |
+| intermediate | `int_age_distribution` | Distribution âge par année + âge moyen estimé | view |
+| intermediate | `int_region_distribution` | Répartition géographique par année + rang | view |
+| mart | `mart_comparison_insee` | Croisement OC global vs INSEE 2023 sur 3 dimensions | table |
+| mart | `mart_sociodemographic` | Synthèse annuelle (top région, top âge, % IDF) | table |
+| mart | `mart_livrable_csv` | Export consolidé pour le livrable CSV (7 blocs, un par slide de résultats) | table |
 
 ## Tests
 
-6 tests automatisés, exécutés à chaque `dbt build` :
+8 tests automatisés, exécutés à chaque `dbt build` :
 
 | Test | Type | Ce qu'il vérifie |
 |------|------|-----------------|
@@ -58,8 +68,8 @@ POPULATION_REGION →    stg_insee_population ───────────�
 | `accepted_values (gender)` | YAML | Uniquement M, F, Non renseigné |
 | `accepted_values (year)` | YAML | Années 2022-2025 uniquement |
 | `assert_unique_student_year` | Custom SQL | Unicité USER_ID + année (568 réinscriptions OK, pas de vrai doublon) |
-| `assert_percentages_sum_100` | Custom SQL | Somme des % = 100% par année (tolérance arrondis) |
-| `assert_region_pct_sum_100` | Custom SQL | Idem pour les régions |
+| `assert_percentages_sum_100` | Custom SQL | Somme des % âge = 100% par année (tolérance arrondis 99-101) |
+| `assert_region_pct_sum_100` | Custom SQL | Somme des % régions = 100% par année |
 | `assert_no_future_years` | Custom SQL | Pas d'année hors plage 2022-2025 |
 
 ## Conformité RGPD
@@ -94,6 +104,18 @@ ORDER BY slide, rang;
 ```
 Puis bouton Download → CSV.
 
+Le CSV contient 7 blocs identifiés par la colonne `source_table` :
+
+| Bloc | Slide | Contenu |
+|------|-------|---------|
+| `S08_effectifs_par_annee` | 8 | Inscriptions par année |
+| `S09_parite_homme_femme` | 9 | Répartition M/F/NR par année |
+| `S10_distribution_age` | 10 | Distribution âge global + comparaison INSEE |
+| `S11_evolution_age_top5` | 11 | Évolution top 5 tranches d'âge par année |
+| `S12_repartition_geographique` | 12 | Répartition géographique global + comparaison INSEE |
+| `S13_evolution_pct_idf` | 13 | Évolution % IDF par année |
+| `S14_S16_comparaison_insee_synthese` | 14 | 3 lignes clés OC vs INSEE (genre, âge, IDF) |
+
 ## Structure du repo
 ```
 models/
@@ -107,7 +129,7 @@ models/
     int_gender_evolution.sql
     int_age_distribution.sql
     int_region_distribution.sql
-    _int__models.yml
+    _intermediate__models.yml
   marts/
     mart_comparison_insee.sql
     mart_sociodemographic.sql
@@ -118,6 +140,8 @@ tests/
   assert_percentages_sum_100.sql
   assert_region_pct_sum_100.sql
   assert_no_future_years.sql
+scripts/
+  convert_insee_xlsx_to_csv.py
 dbt_project.yml
 README.md
 ```
