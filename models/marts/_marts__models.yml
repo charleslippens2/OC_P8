@@ -5,7 +5,7 @@ models:
     description: >-
       Synthèse annuelle pour la direction : une ligne par année avec
       le top région, le top tranche d'âge, et le % IDF.
-      Joint les 4 modèles intermédiaires. Alimente la slide 14
+      Joint les 4 modèles intermédiaires. Alimente la slide 16
       (recommandations) avec les tendances par année.
     columns:
       - name: year_started
@@ -27,7 +27,7 @@ models:
       Structure UNION ALL — ~25 lignes avec pct_oc, pct_insee, ecart_pts.
       Lit les staging directement (pas les intermédiaires) car la
       comparaison est globale, pas par année.
-      Alimente les slides 10 (âge), 11 (géo), 12 (tableau) et 14 (synthèse).
+      Alimente les slides 10 (âge), 12 (géo), 14 (tableau) et 16 (synthèse).
     columns:
       - name: dimension
         description: "Axe de comparaison : region, genre ou age"
@@ -40,11 +40,13 @@ models:
   - name: mart_livrable_csv
     description: >-
       Modèle utilitaire d'export — consolide tous les indicateurs
-      en un seul fichier CSV livrable. Chaque bloc est étiqueté par
-      numéro de slide (S08_ à S12_S14_). Ne fait aucun calcul,
+      en un seul fichier CSV livrable. 7 blocs étiquetés par
+      numéro de slide (S08_ à S14_S16_). Ne fait aucun calcul,
       juste un assemblage UNION ALL des intermédiaires et du mart.
       Filtrable par source_table pour retrouver les données
       de chaque graphique du support de présentation.
+      Cellules vides marquées N/A quand la colonne ne s'applique pas
+      au bloc concerné.
     columns:
       - name: slide
         description: Numéro de la slide alimentée par ce bloc
@@ -52,11 +54,10 @@ models:
           - not_null
           - accepted_values:
               arguments:
-                values: [8, 9, 10, 11, 12]
+                values: [8, 9, 10, 11, 12, 13, 14]
       - name: source_table
         description: >-
-          Identifiant du bloc — correspond au titre du graphique
-          ou tableau de la slide. Permet de filtrer le CSV
+          Identifiant du bloc — permet de filtrer le CSV
           pour retrouver les données d'une slide spécifique.
         data_tests:
           - not_null
@@ -66,13 +67,15 @@ models:
                   - 'S08_effectifs_par_annee'
                   - 'S09_parite_homme_femme'
                   - 'S10_distribution_age'
-                  - 'S11_repartition_geographique'
-                  - 'S12_S14_comparaison_insee_synthese'
+                  - 'S11_evolution_age_top5'
+                  - 'S12_repartition_geographique'
+                  - 'S13_evolution_pct_idf'
+                  - 'S14_S16_comparaison_insee_synthese'
       - name: dimension
-        description: "Année (pour slides 8-9) ou 'global' (pour slides 10-11) ou dimension INSEE (pour slide 12)"
+        description: "Année (slides 8-9, 11, 13) ou 'global' (slides 10, 12) ou dimension INSEE (slide 14)"
         data_tests:
           - not_null
       - name: rang
-        description: Ordre d'affichage dans le graphique (tri par année, par âge, ou par % décroissant selon le bloc)
+        description: Ordre d'affichage dans le graphique
         data_tests:
           - not_null
