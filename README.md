@@ -14,14 +14,24 @@ Produire des indicateurs exploitables pour la direction pédagogique sur 3 dimen
 - **Python (openpyxl)** — prétraitement du fichier Excel INSEE avant chargement
 - **INSEE** — données externes de population (open data)
 
-## Sources de données
+## Données sources
 
-| Source | Table Snowflake | Description |
-|--------|----------------|-------------|
-| OpenClassrooms | `OC_P8.RAW.STUDENTS` | 4647 inscriptions, 6 variables, 2022-2025 |
-| INSEE | `OC_P8.RAW_INSEE.POPULATION_REGION` | Population par région, sexe, âge quinquennal (2022-2025) |
+Ce repo ne contient pas les fichiers de données (trop volumineux ou confidentiels).
 
-Les données sources ne sont pas incluses dans le repo (confidentialité OC + volume INSEE). Voir `data/README.md` pour les instructions d'obtention.
+### Comment les obtenir
+
+#### Données OC (STUDENTS)
+- Fichier fourni par OpenClassrooms dans le cadre du projet P8
+- Format : CSV, 4647 lignes, 6 colonnes
+- Charger dans : `OC_P8.RAW.STUDENTS`
+
+#### Données INSEE (POPULATION_REGION)
+1. Télécharger depuis : https://www.insee.fr/fr/statistiques/8721456
+   - Fichier : "estim-pop-nreg-sexe-aq-1975-2026.xlsx"
+2. Exécuter le script de conversion : `python scripts/convert_insee_xlsx_to_csv.py`
+3. Charger le CSV produit dans : `OC_P8.RAW_INSEE.POPULATION_REGION`
+
+Voir `scripts/load_data_snowflake.sql` pour les commandes de chargement.
 
 ## Prétraitement INSEE
 
@@ -31,11 +41,11 @@ pip install openpyxl
 python scripts/convert_insee_xlsx_to_csv.py
 ```
 
-Produit `insee_population_region.csv` → chargé dans `OC_P8.RAW_INSEE.POPULATION_REGION` via Snowflake Load Data. Voir `scripts/load_data_snowflake.sql` pour les commandes de chargement.
+Produit `insee_population_region.csv` → chargé dans `OC_P8.RAW_INSEE.POPULATION_REGION` via Snowflake Load Data.
 
 ## Architecture du pipeline
 
-![Lineage DAG](docs/lineage_dag.png)
+Le lineage (DAG) est visible dans le support de présentation (slide 7) ou en exécutant `dbt docs generate` dans l'IDE dbt Cloud.
 ```
 Sources (RAW)          Staging (stg_)         Intermediate (int_)       Marts
 ─────────────          ──────────────         ───────────────────       ─────
@@ -57,8 +67,8 @@ Le pipeline suit l'architecture dbt en 3 couches : le staging nettoie et harmoni
 | staging | `stg_insee_population` | Harmonisation : régions (Centre-Val-de-Loire, DROM), sexe (M/F/Ensemble), regroupement 60+, exclusion <20 ans | view |
 | intermediate | `int_students_by_year` | Effectifs, étudiants distincts, répartition genre, taux NR, % femmes parmi répondants → slide 8 | view |
 | intermediate | `int_gender_evolution` | Évolution M/F/NR par année en format long → slide 9 | view |
-| intermediate | `int_age_distribution` | Distribution âge par année, rang, âge moyen estimé → slide 11 + backup oral | view |
-| intermediate | `int_region_distribution` | Répartition géographique par année, rang, zone IDF/Province → slide 13 + backup oral | view |
+| intermediate | `int_age_distribution` | Distribution âge par année, rang, âge moyen estimé → slide 11 | view |
+| intermediate | `int_region_distribution` | Répartition géographique par année, rang, zone IDF/Province → slide 13 | view |
 | mart | `mart_comparison_insee` | Croisement OC global vs INSEE 2023 sur 3 dimensions (UNION ALL) → slides 10, 12, 14 | table |
 | mart | `mart_sociodemographic` | Synthèse annuelle : joint les 4 intermédiaires, aucun recalcul | table |
 | mart | `mart_livrable_csv` | Export consolidé : 7 blocs étiquetés par slide, colonnes polymorphes, UNION ALL | table |
@@ -171,8 +181,6 @@ scripts/
   requetes_verification_snowflake.sql # Vérification par slide + exports
 data/
   README.md                           # Instructions pour obtenir les données sources
-docs/
-  lineage_dag.png                     # Capture du DAG dbt
 dbt_project.yml
 README.md
 ```
